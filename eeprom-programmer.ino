@@ -1,5 +1,3 @@
-#include <XModem.h>
-
 /* Project:65 EEPROM burner
    Copyright (c) 2012, Christopher Just
    All rights reserved.
@@ -43,7 +41,7 @@
 */
 
 #include <Wire.h>
-#include <Xmodem.h>
+#include <XModem.h>
 #include <stdlib.h>
 
 XModem xmodem;
