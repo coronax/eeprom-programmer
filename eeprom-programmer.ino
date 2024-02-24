@@ -1,3 +1,5 @@
+#include <XModem.h>
+
 /* Project:65 EEPROM burner
    Copyright (c) 2012, Christopher Just
    All rights reserved.
@@ -41,25 +43,26 @@
 */
 
 #include <Wire.h>
-#include <SD.h>
+#include <Xmodem.h>
 #include <stdlib.h>
+
+XModem xmodem;
 
 constexpr int addr1 = 0b00100000;  // 23017 #1
 constexpr int addr2 = 0b00100001;  // 23017 #2
 bool write_mode = true;
 
-//int max_addr = 8192;
 long int max_addr = 16384;
 
-#define EEPROM_CHIP_ENABLE   1
-#define EEPROM_OUTPUT_ENABLE 2
-#define EEPROM_WRITE_ENABLE  4
+constexpr int EEPROM_CHIP_ENABLE   = 1;
+constexpr int EEPROM_OUTPUT_ENABLE = 2;
+constexpr int EEPROM_WRITE_ENABLE  = 4;
 
 // CJ Bug - cut this buffer down from 80 bytes after making some additions.
 // Apparently I am hard up against the RAM limits for the SD library to 
 // work.
-char buffer[30];    // buffer used for formatting output messages
-int buffer_len = 30;
+char buffer[60];    // buffer used for formatting output messages
+int buffer_len = 60;
 
 
 void set28c65Mode () 
@@ -80,8 +83,8 @@ void set28c65Mode ()
   // Port B is the data bus.
   Wire.beginTransmission (addr2);
   Wire.write (0x00);  // Address of data direction register for Port A
-  Wire.write (0x08);  // set busy as input, others as output
-  Wire.write (0x00);  // set all as outputs
+  Wire.write (0x08);  // Port A: set busy as input, others as output
+  Wire.write (0x00);  // Port B: set all as outputs
   Wire.endTransmission ();
   // the busy line needs a pullup resistor.  We can
   // turn on an internal pullup
@@ -114,8 +117,8 @@ void set28c256Mode ()
   // Port B is the data bus.
   Wire.beginTransmission (addr2);
   Wire.write (0x00);  // Address of data direction register for Port A
-  Wire.write (0x00);  // set all as outputs for 28c256
-  Wire.write (0x00);  // set all as outputs
+  Wire.write (0x00);  // Port A: set all as outputs for 28c256
+  Wire.write (0x00);  // Port B: set all as outputs
   Wire.endTransmission ();
   // the busy line needs a pullup resistor.  We can
   // turn on an internal pullup
@@ -133,16 +136,20 @@ void set28c256Mode ()
 
 void setup () 
 {
-  Serial.begin (9600);
+  Serial.begin (57600);
+  Serial.setTimeout(30000);
   Serial.println ("Arduino EEPROM programmer");
 
+  Wire.setClock(400000); // Supposedly fastest setting AT328 supports
   Wire.begin ();
+
+  xmodem.begin(Serial);
 
   // Setup for SD card reader
   // pinMode (10,OUTPUT);  // required by SPI library
-  pinMode (4, OUTPUT);  // chip select for SD card reader
-  if (!SD.begin (4))
-    Serial.println ("Couldn't start SD");
+  //pinMode (4, OUTPUT);  // chip select for SD card reader
+  //if (!SD.begin (4))
+  //  Serial.println ("Couldn't start SD");
 
   for (;;)
   {
@@ -171,52 +178,92 @@ void setup ()
 
 void loop () 
 {
+  Serial.println("Select:");
+  Serial.println("  1. Write Image");
+  Serial.println("  2. Verify Image");
+  Serial.println("  3. Test Write");
+  Serial.println("  4. Test Read");
+  Serial.print ("> ");
+
+  while (!Serial.available())
+    ;    
+  char c = Serial.read();
+  Serial.println(c);
+
+  if (c == '1')
+  {
+    writeFile();
+  }
+  else if (c == '2')
+  {
+    verifyFile();
+  }
+  else if (c == '3')
+  {
+    testWrite();
+  }
+  else if (c == '4')
+  {
+    testRead();
+  }
+  else
+  {
+    Serial.print("Error");
+    Serial.print("> ");
+  }
+}
+
+#if 0
+void loop () 
+{
   char command_buffer[25];
 
   Serial.print ("> ");
   byte len;
-  while ((len = Serial.readBytesUntil('\n', command_buffer,24)) == 0)
+  while ((len = Serial.readBytesUntil('\r', command_buffer,24)) == 0)
     ;
   command_buffer[len] = 0;
+  Serial.print("'");
+  Serial.print(command_buffer);
+  Serial.print("'");
   if (command_buffer[len-1] == 13) // just in case we have a cr/lf
     command_buffer[len-1] = 0;
-  Serial.println (command_buffer);
-  if (strncmp (command_buffer, "testread", 8) == 0)
+
+  //Serial.println (command_buffer);
+  if (strcmp (command_buffer, "testread") == 0)
   {
     testRead();
   }
-  else if (strncmp (command_buffer, "testwrite", 9) == 0)
+  else if (strcmp (command_buffer, "testwrite") == 0)
   {
     testWrite();    
   }
-  else if (strncmp (command_buffer, "write ", 6) == 0)
+  else if (strcmp (command_buffer, "write") == 0)
   {
-    writeFile (command_buffer + 6);
+    writeFile ();
   }
-  else if (strncmp (command_buffer, "verify ", 7) == 0)
+  else if (strcmp (command_buffer, "verify") == 0)
   {
-    verifyFile (command_buffer + 7);
-  }
-  else if (strncmp (command_buffer, "list", 4) == 0)
-  {
-    listFiles();
+    verifyFile ();
   }
   else 
   {
-    Serial.println ("eh, whazzat?");
+    Serial.println ("Syntax Error.");
   }
 }
+#endif
 
-#if 1
 /* Writes contents of the array value[] to the first few bytes of the EEPROM */
 void testWrite() 
 {
-  Serial.println ("Writing 16 bytes to EEPROM");
+  Serial.println ("Writing 16 bytes to EEPROM:");
   byte value[] = { 0x01, 0x12, 0x23, 0x30, 0x40, 0x50, 0x61, 0x79, 0x88, 0x9b, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0x13 };
 
-  setWriteMode();
+  //setWriteMode();
   for (int i = 0; i < 16; ++i) 
   {
+    writeByte (i, value[i], true);
+#if 0
     setAddressBus (i);
     setDataBus (value[i]);
     delay (2);
@@ -224,14 +271,16 @@ void testWrite()
     setCommandLines (EEPROM_CHIP_ENABLE | EEPROM_WRITE_ENABLE);
     setCommandLines (EEPROM_CHIP_ENABLE);
     delay (10); // wait for write to finish - max 10 ms
+#endif 
   }
-  Serial.println ("Done");
+  Serial.println ("Done.\n");
 }
-#endif
+
 
 /* Reads and prints out hte first 16 bytes of the EEPROM */
 void testRead()
 {
+  Serial.println ("Reading first 16 bytes of EEPROM:");
   // try to read the first 16 bytes of the eeprom
   setReadMode();
   setCommandLines (EEPROM_CHIP_ENABLE | EEPROM_OUTPUT_ENABLE);
@@ -242,7 +291,7 @@ void testRead()
     Serial.println (b, HEX);
   }
   setCommandLines (EEPROM_CHIP_ENABLE);
-  Serial.println ("Done");
+  Serial.println ("Done.\n");
 }
 
 
@@ -259,129 +308,134 @@ byte readByte (int addr)
 }
 
 
-/* Writes val to the address addr */
-void writeByte (int addr, byte val)
+
+/* Writes val to the address addr.
+ * The wait_for_write bool here was an attempt to support page mode.
+ * However, it appears event with the i2c clock set at the highest
+ * rate the 23017 datasheet supports (1.7MHz), we still end up with
+ * 1.14 ms between WE pulses - far longer than the 150 us that is 
+ * the maximum for page mode writes.
+ */
+void writeByte (int addr, byte val, bool wait_for_write)
 {
   setWriteMode();
   setAddressBus (addr);
   setDataBus (val);
   setCommandLines (EEPROM_CHIP_ENABLE | EEPROM_WRITE_ENABLE);
   setCommandLines (EEPROM_CHIP_ENABLE);
+
   // wait for completion by reading from the bus and waiting
   // until the highest bit of the read value equals
   // the highest bit of val.
-
-  //setReadMode();
-  byte b;
-  do
+  if (wait_for_write)
   {
-    b = readByte (addr);
-  } while ((val & 0x80) != (b & 0x80));
-
-  // wait for write to complete by waiting on the busy line
-  //while (getBusy())
-  //  ;
+    byte b;
+    do
+    {
+      b = readByte (addr);
+    } while ((val & 0x80) != (b & 0x80));
+  }
 }
 
 
-/* List the files in the SD card's /eeprom directory */
-void listFiles ()
+
+// verify or write data:
+long int num_differences = 0;
+long int address = 0;
+
+
+
+bool WriteReceiveHandler(void *blk_id, size_t idSize, byte *data, size_t dataSize)
 {
-//char buffer[20];    // buffer used for formatting output messages
-//int buffer_len = 20;
-  
-  File dir = SD.open("/eeprom");
-  if (!dir)
+  for (int i = 0; i < dataSize; ++i)
   {
-    Serial.println ("Couldn't open /eeprom");
-    return;
-  }
-  Serial.println ("available files:");
-  File entry;
-  while (entry = dir.openNextFile())
-  {
-    snprintf (buffer, buffer_len, "%-12s  %10lu", entry.name(), entry.size());
-    Serial.println (buffer);
-    entry.close();
-  }
-  Serial.println ("Done");
-  dir.close();
-}
+    //if (address %100 == 0)
+    //  Serial.print (".");
 
+    byte b1 = data[i];
+    writeByte (address, b1, true);//(address % 64 == 63) || (i == dataSize - 1));
+    ++address;
+  }
+  return true;
+}
 
 
 /* Write the contents of the specified file to the EEPROM, 
  * starting at address 0 and going until the end of the
  * file or max_addr, whichever comes first.
  */
-void writeFile (char* filename)
+void writeFile ()
 {
-//char buffer[20];    // buffer used for formatting output messages
-//int buffer_len = 20;
-  snprintf (buffer, buffer_len, "/eeprom/%s", filename);
-  File f = SD.open (buffer);
-  if (!f)
+  num_differences = 0;
+  address = 0;
+  xmodem.setRecieveBlockHandler(WriteReceiveHandler);
+  Serial.println ("Writing: Begin XModem transfer.");
+  Serial.flush();
+  if (!xmodem.receive())
+    Serial.println ("Error: XModem transfer failed.");
+
+  setAddressBus(0);
+
+  if (address != max_addr)
   {
-    Serial.print ("Failed to open ");
+    snprintf (buffer, buffer_len, "Error: Expected %ld bytes, received %ld.\n", max_addr, address);
+    Serial.println(buffer);
+  }
+  else
+  {
+    snprintf (buffer, buffer_len, "Wrote %ld bytes; %ld max.\n", address, max_addr);
     Serial.println (buffer);
-    return;
   }
-  snprintf (buffer, buffer_len, "Writing file \"%s\"", filename);
-  Serial.println (buffer);
-  long int addr = 0;
-  while (f.available() && addr < max_addr)
-  {
-    if (addr %100 == 0)
-      Serial.print (".");
-    writeByte (addr, f.read());
-    ++addr;
-  }
-  setAddressBus (0);
-  snprintf (buffer, buffer_len, "\nWrote %ld bytes; %ld max.", addr, max_addr);
-  Serial.println (buffer);
-  f.close();
 }
 
 
-/* Verifies that the contents of the EEPROM matches
- * the given file.
- */
-void verifyFile (char* filename)
+
+bool VerifyReceiveHandler(void *blk_id, size_t idSize, byte *data, size_t dataSize)
 {
-  long int num_differences = 0;
-  snprintf(buffer,buffer_len,"/eeprom/%s", filename);
-  File f = SD.open (buffer);
-  if (!f)
+  for (int i = 0; i < dataSize; ++i)
   {
-    Serial.print ("Failed to open ");
-    Serial.println (buffer);
-    return;
-  }
-  snprintf (buffer, buffer_len,"Verifying \"%s\"", filename);
-  Serial.println (buffer);
-  long int addr = 0;
-  while (f.available() && addr < max_addr)
-  {
-    if (addr %100 == 0)
-      Serial.print (".");
-    byte b1 = f.read();
-    byte b2 = readByte (addr);
+    //if (address %100 == 0)
+    //  Serial.print (".");
+
+    byte b1 = data[i];
+    byte b2 = readByte(address++);
     if (b1 != b2)
-      ++num_differences;
-    ++addr;
+      ++ num_differences;
   }
+  return true;
+}
+
+/* Verifies that the contents matches the downloaded file.
+ */
+void verifyFile ()
+{
+  num_differences = 0;
+  address = 0;
+  xmodem.setRecieveBlockHandler(VerifyReceiveHandler);
+  Serial.println ("Verifying: Begin XModem transfer.");
+  Serial.flush();
+  if (!xmodem.receive())
+    Serial.println ("Error: XModem transfer failed.");
+
+  if (address != max_addr)
+  {
+    snprintf (buffer, buffer_len, "Error: Expected %d bytes, received %d.", max_addr, address);
+    Serial.println(buffer);
+  }
+
   setAddressBus(0);
-  f.close();
+
   if (num_differences == 0)
   {
-    Serial.println ("\nFile matches ROM");
+    Serial.println ("\nFile matches ROM.\n");
   } 
   else
   {
-    snprintf (buffer, buffer_len, "\nFile differs in %ld places.", num_differences);
+    snprintf (buffer, buffer_len, "\nFile differs in %ld places.\n", num_differences);
     Serial.println (buffer);
   }
 }
+
 
 
 /* Sets the value of the three command lines.
@@ -402,9 +456,9 @@ void setCommandLines (byte lines)
 void setAddressBus (int address)
 {
   byte low_byte = address & 0x00FF;
-  // in my v2 board, I accidentally have the low byte of the address connected to the
+  // in my v2.1 board, I accidentally have the low byte of the address connected to the
   // EEPROM the wrong way around, so we need to reverse order of bits here...
-  // FIX THIS in v2.1!
+  // FIX THIS in v2.2!
   low_byte = ((low_byte & 0x000f) << 4) | ((low_byte & 0x00f0) >> 4);
   low_byte = ((low_byte & 0x0033) << 2) | ((low_byte & 0x00cc) >> 2);
   low_byte = ((low_byte & 0x0055) << 1) | ((low_byte & 0x00aa) >> 1);
@@ -439,7 +493,7 @@ void setReadMode ()
   {
     Wire.beginTransmission (addr2);
     Wire.write (0x01); // IO direction register port A
-    Wire.write (0xFF); // set all as outputs
+    Wire.write (0xFF); // set all as inputs
     Wire.endTransmission ();
     write_mode = false;
   }
@@ -469,19 +523,4 @@ byte getDataBus ()
 }
 
 
-/* Get the state of the Busy/Ready line.
- * True means the EEPROM is busy (ie writing).
- * This becomes false when it's done writing.
- */
- /*
-boolean getBusy ()
-{
-  Wire.beginTransmission (addr2);
-  Wire.write (0x12);
-  Wire.endTransmission ();  
-  Wire.requestFrom (addr2, 1);
-  byte data = Wire.read();
-  // data line is active low, so return true if bit 3 is 0
-  return (data & 0x08) == 0x00;
-}
-*/
+
