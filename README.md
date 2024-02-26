@@ -1,24 +1,13 @@
 # Project:65 EEPROM Programmer
 
-This is a simple Arduino-based EEPROM Programmer designed to handle the 8KB 28c65 and the 32KB 28c256 Electronically-Erasable Programmable ROMs. Originally built as a breadboard project, it consists of:
+This is a simple Arduino-based EEPROM Programmer designed to handle the 8KB 28c65 and the 32KB 28c256 Electronically-Erasable Programmable ROMs. Originally built as a breadboard project, it uses a pair of MCP23017 port expander chips to provide the required number of GPIO pins.
 
- - An Arduino UNO, or compatible board.
- - The Arduino Ethernet shield (we only use the SD card, not the Ethernet connection).
- - 2x MCP23017 port expanders.
+The original version of the programmer used an SD card (and an Arduino Ethernet shield) to store the binary images. The current version instead downloads them over the USB/serial connection using ZModem.
 
 For a run-down of the original (28c65-only) version, see [here].
  
-## Building the Programmer
-
-
-## Usage
-
-Before using the programmer, place a file containing the image to be written on an SD card in a folder called 
 
 [//]: # 
 
 	[here]: <https://coronax.wordpress.com/projects/
-   [Project Blog]: <https://coronax.wordpress.com/projects/retrochallenge-summer-2014/>
-   [Retrochallenge]: <https://www.retrochallenge.org/>
-   [CC65]: <https://github.com/cc65/cc65>
    
